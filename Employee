@@ -1,0 +1,97 @@
+package employee
+
+import (
+	"database/sql"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/gin-gonic/gin"
+)
+
+var (
+	dbConn *sql.DB
+	err    error
+	logger = log.New(os.Stdout, "EmployeeService ", log.LstdFlags|log.Lshortfile)
+)
+
+type Employee struct {
+	ID        string `json:"id" db:"id"`
+	EmpID     string `json:"empid" db:"empid"`
+	EmpName   string `json:"empName" db:"empName"`
+	CreatedBy string `json:"createdBy" db:"createdBy"`
+	UpdatedBy string `json:"updatedBy" db:"updatedBy"`
+}
+
+func CreateEmployee(c *gin.Context) {
+	var employee Employee
+	if err := c.ShouldBindJSON(&employee); err != nil {
+		logger.Printf("Error binding JSON: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	_, err := dbConn.Exec("INSERT INTO employees (id, empid, empName, createdBy, updatedBy) VALUES (?, ?, ?, ?, ?)",
+		employee.ID, employee.EmpID, employee.EmpName, employee.CreatedBy, employee.UpdatedBy)
+	if err != nil {
+		logger.Printf("Error inserting employee into the database: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
+		return
+	}
+
+	c.Status(http.StatusCreated)
+}
+
+func RetrieveEmployeeByID(c *gin.Context) {
+	id := c.Param("id")
+
+	var employee Employee
+
+	err := dbConn.QueryRow("SELECT id, empid, empName, createdBy, updatedBy FROM employees WHERE id=?", id).
+		Scan(&employee.ID, &employee.EmpID, &employee.EmpName, &employee.CreatedBy, &employee.UpdatedBy)
+
+	if err != nil {
+		logger.Printf("Error retrieving employee by ID: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, employee)
+}
+
+func RetrieveEmployees(c *gin.Context) {
+	rows, err := dbConn.Query("SELECT id, empid, empName, createdBy, updatedBy FROM employees")
+	if err != nil {
+		logger.Printf("Error retrieving employees: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
+		return
+	}
+	defer rows.Close()
+
+	var employees []Employee
+	for rows.Next() {
+		var employee Employee
+		err := rows.Scan(&employee.ID, &employee.EmpID, &employee.EmpName, &employee.CreatedBy, &employee.UpdatedBy)
+		if err != nil {
+			logger.Printf("Error scanning employee row: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
+			return
+		}
+		employees = append(employees, employee)
+	}
+
+	c.JSON(http.StatusOK, employees)
+}
+
+func DeleteEmployeeByID(c *gin.Context) {
+	id := c.Param("id")
+
+	_, err := dbConn.Exec("DELETE FROM employees WHERE id=?", id)
+	if err != nil {
+		logger.Printf("Error deleting employee by ID: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
